@@ -198,6 +198,29 @@ app.get('/auth/instagram/callback', async (req, res, next) => {
   }
 });
 
+// Instagram Webhook Verification
+app.get('/webhook', (req, res) => {
+  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('Webhook verified successfully.');
+    res.status(200).send(challenge);
+  } else {
+    console.error('Webhook verification failed.');
+    res.status(403).send('Forbidden');
+  }
+});
+
+// Instagram Webhook POST Handling
+app.post('/webhook', (req, res) => {
+  console.log('Received webhook event:', req.body);
+  res.status(200).send('Event received');
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
