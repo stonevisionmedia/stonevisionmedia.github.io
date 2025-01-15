@@ -37,13 +37,12 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Session management middleware
+// Session setup for Passport
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'defaultsecret',
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false }, // Set to true if using HTTPS
   })
 );
 
@@ -141,22 +140,17 @@ app.post(
 
 // Start Facebook OAuth
 app.get('/auth/facebook', passport.authenticate('facebook', {
-  scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish']
+  scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish'],
 }));
 
 // Facebook OAuth Callback
-app.get('/auth/facebook/callback', passport.authenticate('facebook', {
-  failureRedirect: '/login',
-  successRedirect: '/profile'
-}));
-
-// Protected profile route
-app.get('/profile', (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.redirect('/');
+app.get(
+  '/auth/facebook/callback',
+  passport.authenticate('facebook', { failureRedirect: '/login' }),
+  (req, res) => {
+    res.json({ user: req.user });
   }
-  res.json({ user: req.user });
-});
+);
 
 /**
  * Instagram OAuth Routes (via Facebook)
