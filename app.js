@@ -11,8 +11,8 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const querystring = require('querystring');
 const passport = require('passport');
-const FacebookStrategy = require('passport-facebook').Strategy;
 const session = require('express-session');
+const FacebookStrategy = require('passport-facebook').Strategy;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,12 +32,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// PostgreSQL connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-// Session setup for Passport
+// Session setup
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'defaultsecret',
@@ -49,6 +44,11 @@ app.use(
 // Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
+
+// PostgreSQL connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 // Configure Passport for Facebook OAuth
 passport.use(
@@ -146,7 +146,9 @@ app.get('/auth/facebook', passport.authenticate('facebook', {
 // Facebook OAuth Callback
 app.get(
   '/auth/facebook/callback',
-  passport.authenticate('facebook', { failureRedirect: '/login' }),
+  passport.authenticate('facebook', {
+    failureRedirect: '/login',
+  }),
   (req, res) => {
     res.json({ user: req.user });
   }
@@ -217,7 +219,9 @@ app.get('/auth/instagram/callback', async (req, res, next) => {
   }
 });
 
-// Instagram Webhook Verification
+/**
+ * Instagram Webhook Verification
+ */
 app.get('/webhook', (req, res) => {
   const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
@@ -234,7 +238,9 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// Instagram Webhook POST Handling
+/**
+ * Instagram Webhook POST Handling
+ */
 app.post('/webhook', (req, res) => {
   console.log('Received webhook event:', req.body);
   res.status(200).send('Event received');
