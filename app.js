@@ -12,6 +12,7 @@ const axios = require('axios');
 const querystring = require('querystring');
 const passport = require('passport');
 const FacebookStrategy = require('passport-facebook').Strategy;
+const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,19 +37,35 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// Session management middleware
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'defaultsecret',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false }, // Set to true if using HTTPS
+  })
+);
+
 // Initialize Passport
 app.use(passport.initialize());
+app.use(passport.session());
 
 // Configure Passport for Facebook OAuth
-passport.use(new FacebookStrategy({
-  clientID: process.env.FB_APP_ID,
-  clientSecret: process.env.FB_APP_SECRET,
-  callbackURL: process.env.FB_CALLBACK_URL || "https://mediamoney.onrender.com/auth/facebook/callback",
-  profileFields: ['id', 'displayName', 'emails']
-}, (accessToken, refreshToken, profile, done) => {
-  console.log('Facebook OAuth Profile:', profile);
-  return done(null, { accessToken, profile });
-}));
+passport.use(
+  new FacebookStrategy(
+    {
+      clientID: process.env.FB_APP_ID,
+      clientSecret: process.env.FB_APP_SECRET,
+      callbackURL: process.env.FB_CALLBACK_URL || "https://mediamoney.onrender.com/auth/facebook/callback",
+      profileFields: ['id', 'displayName', 'emails'],
+    },
+    (accessToken, refreshToken, profile, done) => {
+      console.log('Facebook OAuth Profile:', profile);
+      return done(null, { accessToken, profile });
+    }
+  )
+);
 
 passport.serializeUser((user, done) => {
   done(null, user);
@@ -130,8 +147,16 @@ app.get('/auth/facebook', passport.authenticate('facebook', {
 // Facebook OAuth Callback
 app.get('/auth/facebook/callback', passport.authenticate('facebook', {
   failureRedirect: '/login',
-  successRedirect: '/'
+  successRedirect: '/profile'
 }));
+
+// Protected profile route
+app.get('/profile', (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.redirect('/');
+  }
+  res.json({ user: req.user });
+});
 
 /**
  * Instagram OAuth Routes (via Facebook)
