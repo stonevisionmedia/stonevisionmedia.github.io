@@ -242,7 +242,13 @@ app.get('/webhook', (req, res) => {
  * Instagram Webhook POST Handling
  */
 app.post('/webhook', (req, res) => {
-  console.log('Received webhook event:', req.body);
+  const event = req.body;
+  console.log('Received Instagram Webhook Event:', JSON.stringify(event, null, 2));
+  const fs = require('fs');
+  fs.appendFile('webhook_logs.txt', JSON.stringify(event) + '\n', (err) => {
+    if (err) console.error('Error writing to log:', err);
+  });
+
   res.status(200).send('Event received');
 });
 
