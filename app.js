@@ -241,13 +241,33 @@ app.get('/webhook', (req, res) => {
 /**
  * Instagram Webhook POST Handling
  */
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
   const event = req.body;
+
+  // Log the event to the console for debugging
   console.log('Received Instagram Webhook Event:', JSON.stringify(event, null, 2));
-  const fs = require('fs');
-  fs.appendFile('webhook_logs.txt', JSON.stringify(event) + '\n', (err) => {
-    if (err) console.error('Error writing to log:', err);
-  });
+
+  try {
+    // Save event to the database
+    const query = `
+      INSERT INTO webhook_logs (event_id, event_type, event_data)
+      VALUES ($1, $2, $3)
+    `;
+    const values = [
+      event.id || null, // Replace with the actual ID from the webhook payload
+      event.type || 'unknown', // Replace with the actual event type
+      JSON.stringify(event) || '{}',
+    ];
+
+    const result = await pool.query(query, values);
+
+    // Debugging: Log the result of the database query
+    console.log('Database insert result:', result);
+
+    console.log('Webhook event logged successfully');
+  } catch (error) {
+    console.error('Error logging webhook event:', error);
+  }
 
   res.status(200).send('Event received');
 });
