@@ -244,31 +244,30 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
   const event = req.body;
 
-  // Log the event to the console for debugging
   console.log('Received Instagram Webhook Event:', JSON.stringify(event, null, 2));
 
   try {
-    // Save event to the database
+    console.log('Preparing to insert into database...');
     const query = `
       INSERT INTO webhook_logs (event_id, event_type, event_data)
       VALUES ($1, $2, $3)
     `;
     const values = [
-      event.id || null, // Replace with the actual ID from the webhook payload
-      event.type || 'unknown', // Replace with the actual event type
+      event.id || null,
+      event.type || 'unknown',
       JSON.stringify(event) || '{}',
     ];
 
-    const result = await pool.query(query, values);
+    console.log('Query:', query);
+    console.log('Values:', values);
 
-    // Debugging: Log the result of the database query
-    console.log('Database insert result:', result);
-
+    await pool.query(query, values);
     console.log('Webhook event logged successfully');
   } catch (error) {
-    console.error('Error logging webhook event:', error);
+    console.error('Database Error:', error);
   }
 
+  // Ensure the response is sent no matter what
   res.status(200).send('Event received');
 });
 
