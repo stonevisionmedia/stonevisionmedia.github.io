@@ -244,32 +244,36 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
   const event = req.body;
 
+  // Log the event to the console for debugging
   console.log('Received Instagram Webhook Event:', JSON.stringify(event, null, 2));
 
   try {
-    console.log('Preparing to insert into database...');
+    // Validate payload structure
+    if (!event || typeof event !== 'object') {
+      throw new Error('Invalid event structure');
+    }
+
+    // Save event to the database
     const query = `
       INSERT INTO webhook_logs (event_id, event_type, event_data)
       VALUES ($1, $2, $3)
     `;
     const values = [
-      event.id || null,
-      event.type || 'unknown',
-      JSON.stringify(event) || '{}',
+      event.id || null, // Replace with actual event ID
+      event.type || 'unknown', // Replace with actual event type
+      JSON.stringify(event) || '{}', // Stringify event data
     ];
-
-    console.log('Query:', query);
-    console.log('Values:', values);
 
     await pool.query(query, values);
     console.log('Webhook event logged successfully');
   } catch (error) {
-    console.error('Database Error:', error);
+    console.error('Error in webhook handler:', error.message);
+  } finally {
+    // Always respond to the webhook request
+    res.status(200).send('Event received');
   }
-
-  // Ensure the response is sent no matter what
-  res.status(200).send('Event received');
 });
+
 
 // Global error handler
 app.use((err, req, res, next) => {
