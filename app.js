@@ -220,6 +220,46 @@ app.use((err, req, res, next) => {
   res.status(500).json({ msg: 'An unexpected error occurred' });
 });
 
+app.post('/post/facebook', async (req, res) => {
+  try {
+      const { message, media_url } = req.body;
+      const pageAccessToken = process.env.FB_PAGE_ACCESS_TOKEN;
+      const pageId = process.env.FB_PAGE_ID;
+
+      if (!pageAccessToken || !pageId) {
+          return res.status(400).json({ msg: "Missing Facebook Page credentials" });
+      }
+
+      let postUrl = `https://graph.facebook.com/v17.0/${pageId}/feed`;
+      let postData = { message, access_token: pageAccessToken };
+
+      if (media_url) {
+          postUrl = `https://graph.facebook.com/v17.0/${pageId}/photos`;
+          postData = { url: media_url, caption: message, access_token: pageAccessToken };
+      }
+
+      const response = await axios.post(postUrl, postData);
+      
+      // Store post in Supabase
+      await supabase.from('posts').insert([
+          {
+              platform: 'facebook',
+              content: message,
+              media_url: media_url || null,
+              status: 'published',
+              user_id: req.userId, // Assuming user is authenticated
+              scheduled_time: new Date(),
+              published_at: new Date(),
+          }
+      ]);
+
+      res.json({ msg: "Post successfully created!", response: response.data });
+  } catch (error) {
+      console.error('Facebook Post Error:', error.response?.data || error.message);
+      res.status(500).json({ msg: "Error posting to Facebook" });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
