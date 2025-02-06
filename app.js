@@ -129,40 +129,43 @@ app.post('/register', async (req, res) => {
  */
 app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish'] }));
 
-const { v5: uuidv5 } = require('uuid'); // Import UUID library
+const { v4: uuidv4 } = require('uuid'); // Import UUID generator
 
 app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), async (req, res) => {
-    console.log('Facebook OAuth Profile:', req.user.profile);
+    console.log('🔄 Received Facebook OAuth callback.');
 
     if (!req.user || !req.user.accessToken) {
         console.error('❌ No access token received');
         return res.status(400).json({ msg: 'Facebook OAuth failed' });
     }
 
-    try {
-        // Convert Facebook ID into a UUID
-        const userUUID = uuidv5(req.user.profile.id, uuidv5.URL);
+    console.log('✅ Facebook OAuth Success:', req.user.profile);
 
-        // Check if user exists
+    try {
+        // Generate a valid UUID for Supabase
+        const generatedUUID = uuidv4();
+
+        // Check if user exists in Supabase
         const { data: existingUser, error: fetchError } = await supabase
             .from('profiles')
             .select('id')
-            .eq('id', userUUID)
+            .eq('id', generatedUUID) // Use generated UUID instead of FB ID
             .single();
 
-        if (fetchError && fetchError.code !== 'PGRST116') { // No rows found
+        if (fetchError && fetchError.code !== 'PGRST116') {
             console.error('❌ Supabase Fetch Error:', fetchError.message);
             return res.status(500).json({ msg: 'Database fetch error' });
         }
 
-        // Force Insert Data
+        console.log('🔄 Storing user in Supabase...');
         const { error: upsertError } = await supabase
             .from('profiles')
-            .upsert([
+            .insert([
                 {
-                    id: userUUID, // Store UUID instead of Facebook ID
+                    id: generatedUUID, // Use generated UUID
                     full_name: req.user.profile.displayName || 'Unknown Name',
                     email: req.user.profile.emails?.[0]?.value || 'no-email@provided.com',
+                    facebook_id: req.user.profile.id, // Store original Facebook ID separately
                 }
             ], { onConflict: ['id'] });
 
@@ -171,13 +174,14 @@ app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRe
             return res.status(500).json({ msg: 'Database insert error' });
         }
 
-        console.log('✅ User stored in Supabase:', userUUID);
-        res.json({ msg: 'Facebook connected successfully!', user_id: userUUID });
+        console.log('✅ User stored in Supabase:', generatedUUID);
+        res.json({ msg: 'Facebook connected successfully!', user_id: generatedUUID });
     } catch (error) {
         console.error('❌ Unexpected Error:', error.message);
         res.status(500).json({ msg: 'An unexpected error occurred' });
     }
 });
+
 
 /**
  * Instagram OAuth Routes (via Facebook)
