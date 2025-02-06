@@ -142,34 +142,34 @@ app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRe
           .eq('id', req.user.profile.id)
           .single();
 
-      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = No rows found
+      if (fetchError && fetchError.code !== 'PGRST116') { // No rows found
           console.error('❌ Supabase Fetch Error:', fetchError.message);
-          return res.status(500).json({ msg: 'Database error' });
+          return res.status(500).json({ msg: 'Database fetch error' });
       }
 
-      // Insert or Update User Profile
+      // Force Insert Data
       const { error: upsertError } = await supabase
           .from('profiles')
-          .upsert([
+          .insert([
               {
-                  id: req.user.profile.id,
-                  full_name: req.user.profile.displayName,
-                  email: req.user.profile.emails?.[0]?.value || null,  // Ensure email exists
+                  id: req.user.profile.id || 'no-id-provided',
+                  full_name: req.user.profile.displayName || 'Unknown Name',
+                  email: req.user.profile.emails?.[0]?.value || 'no-email@provided.com',
               }
-          ]);
+          ], { onConflict: ['id'] }); // Prevents duplication errors
 
       if (upsertError) {
           console.error('❌ Supabase Upsert Error:', upsertError.message);
-          return res.status(500).json({ msg: 'Database error' });
+          return res.status(500).json({ msg: 'Database insert error' });
       }
 
+      console.log('✅ User stored in Supabase:', req.user.profile.id);
       res.json({ msg: 'Facebook connected successfully!', user_id: req.user.profile.id });
   } catch (error) {
       console.error('❌ Unexpected Error:', error.message);
       res.status(500).json({ msg: 'An unexpected error occurred' });
   }
 });
-
 
 /**
  * Instagram OAuth Routes (via Facebook)
