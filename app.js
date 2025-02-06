@@ -64,16 +64,25 @@ passport.use(
     async (accessToken, refreshToken, profile, done) => {
       console.log('Facebook OAuth Profile:', profile);
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .upsert([{ id: profile.id, full_name: profile.displayName, email: profile.emails?.[0]?.value }]);
+      // Ensure ID is stored as TEXT, not UUID
+      const userId = profile.id.toString(); 
 
-      if (error) {
-        console.error('Supabase error:', error);
-        return done(error, null);
+      try {
+        // Insert or update user in Supabase
+        const { data, error } = await supabase
+          .from('profiles')
+          .upsert([{ id: userId, full_name: profile.displayName, email: profile.emails?.[0]?.value }], { onConflict: ['id'] });
+
+        if (error) {
+          console.error('❌ Supabase error:', error.message);
+          return done(error, null);
+        }
+
+        return done(null, { accessToken, profile });
+      } catch (err) {
+        console.error('❌ Unexpected Error:', err.message);
+        return done(err, null);
       }
-
-      return done(null, { accessToken, profile });
     }
   )
 );
@@ -275,50 +284,50 @@ app.use((err, req, res, next) => {
 
 app.post('/post/facebook', authenticateToken, async (req, res) => {
   try {
-      const { message, media_url } = req.body;
-      const userId = req.userId; // Ensures the user is authenticated
+    const { message, media_url } = req.body;
+    const userId = req.userId.toString(); // Ensure ID is handled as TEXT
 
-      // Fetch user's stored Facebook Page ID & Access Token from Supabase
-      const { data, error } = await supabase
-          .from('social_connections')
-          .select('account_id, access_token')
-          .eq('user_id', userId)
-          .eq('platform', 'facebook')
-          .single();
+    // Fetch user's stored Facebook Page ID & Access Token from Supabase
+    const { data, error } = await supabase
+      .from('social_connections')
+      .select('account_id, access_token')
+      .eq('user_id', userId)
+      .eq('platform', 'facebook')
+      .single();
 
-      if (error || !data) {
-          return res.status(400).json({ msg: "Facebook Page not connected" });
+    if (error || !data) {
+      return res.status(400).json({ msg: "Facebook Page not connected" });
+    }
+
+    const { account_id: pageId, access_token: pageAccessToken } = data;
+
+    let postUrl = `https://graph.facebook.com/v17.0/${pageId}/feed`;
+    let postData = { message, access_token: pageAccessToken };
+
+    if (media_url) {
+      postUrl = `https://graph.facebook.com/v17.0/${pageId}/photos`;
+      postData = { url: media_url, caption: message, access_token: pageAccessToken };
+    }
+
+    const response = await axios.post(postUrl, postData);
+
+    // Store post in Supabase
+    await supabase.from('posts').insert([
+      {
+        platform: 'facebook',
+        content: message,
+        media_url: media_url || null,
+        status: 'published',
+        user_id: userId, // Ensure correct format
+        scheduled_time: new Date(),
+        published_at: new Date(),
       }
+    ]);
 
-      const { account_id: pageId, access_token: pageAccessToken } = data;
-
-      let postUrl = `https://graph.facebook.com/v17.0/${pageId}/feed`;
-      let postData = { message, access_token: pageAccessToken };
-
-      if (media_url) {
-          postUrl = `https://graph.facebook.com/v17.0/${pageId}/photos`;
-          postData = { url: media_url, caption: message, access_token: pageAccessToken };
-      }
-
-      const response = await axios.post(postUrl, postData);
-
-      // Store post in Supabase
-      await supabase.from('posts').insert([
-          {
-              platform: 'facebook',
-              content: message,
-              media_url: media_url || null,
-              status: 'published',
-              user_id: userId,
-              scheduled_time: new Date(),
-              published_at: new Date(),
-          }
-      ]);
-
-      res.json({ msg: "Post successfully created!", response: response.data });
+    res.json({ msg: "Post successfully created!", response: response.data });
   } catch (error) {
-      console.error('Facebook Post Error:', error.response?.data || error.message);
-      res.status(500).json({ msg: "Error posting to Facebook" });
+    console.error('Facebook Post Error:', error.response?.data || error.message);
+    res.status(500).json({ msg: "Error posting to Facebook" });
   }
 });
 
