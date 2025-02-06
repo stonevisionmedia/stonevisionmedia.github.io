@@ -12,6 +12,7 @@ const passport = require('passport');
 const session = require('express-session');
 const FacebookStrategy = require('passport-facebook').Strategy;
 const { createClient } = require('@supabase/supabase-js');
+const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +22,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 // Middleware for parsing JSON and form data
 app.use(express.json());
+app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Set security headers
@@ -59,10 +61,9 @@ passport.use(
     async (accessToken, refreshToken, profile, done) => {
       console.log('Facebook OAuth Profile:', profile);
 
-      // Store user in Supabase
       const { data, error } = await supabase
         .from('profiles')
-        .upsert([{ id: profile.id, full_name: profile.displayName, email: profile.emails[0]?.value }]);
+        .upsert([{ id: profile.id, full_name: profile.displayName, email: profile.emails?.[0]?.value }]);
 
       if (error) {
         console.error('Supabase error:', error);
@@ -165,7 +166,27 @@ app.get('/auth/instagram/callback', async (req, res) => {
 });
 
 /**
- * Webhook Verification (GET)
+ * Webhook Verification (GET Request)
+ */
+app.get('/webhook', (req, res) => {
+  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  console.log('Webhook verification attempt:', { mode, token, challenge });
+
+  if (mode && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified successfully.');
+    res.status(200).send(challenge);
+  } else {
+    console.error('❌ Webhook verification failed.');
+    res.status(403).send('Forbidden');
+  }
+});
+
+/**
+ * Webhook Handling (POST Request)
  */
 app.post('/webhook', async (req, res) => {
   console.log('Received Instagram Webhook Event:', JSON.stringify(req.body, null, 2));
@@ -176,7 +197,6 @@ app.post('/webhook', async (req, res) => {
   }
 
   try {
-    // Store event in Supabase
     const { error } = await supabase
       .from('audit_logs')
       .insert([{ event_type: 'webhook_received', event_data: req.body }]);
@@ -192,42 +212,6 @@ app.post('/webhook', async (req, res) => {
     console.error('❌ Error in webhook handler:', error.message);
     res.status(500).json({ msg: 'Internal Server Error' });
   }
-});
-
-
-
-/**
- * Webhook Handling (POST)
- */
-app.post('/webhook', async (req, res) => {
-  const event = req.body;
-  console.log('Received Instagram Webhook Event:', JSON.stringify(event, null, 2));
-
-  const { error } = await supabase
-    .from('audit_logs')
-    .insert([{ event_type: 'webhook_received', event_data: event }]);
-
-  if (error) {
-    console.error('Supabase Webhook Error:', error.message);
-  }
-
-  res.status(200).send('Event received');
-});
-
-/**
- * **GET Requests for Testing**
- * These routes allow you to visit OAuth callback URLs in a browser and confirm they work.
- */
-app.get('/auth/facebook/callback', (req, res) => {
-  res.status(200).send('Facebook OAuth Callback GET route is working.');
-});
-
-app.get('/auth/instagram/callback', (req, res) => {
-  res.status(200).send('Instagram OAuth Callback GET route is working.');
-});
-
-app.get('/webhook-test', (req, res) => {
-  res.status(200).send('Webhook test route is working.');
 });
 
 // Global error handler
