@@ -53,8 +53,6 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Configure Passport for Facebook OAuth
-const crypto = require('crypto'); // Ensure this is at the top
-
 passport.use(
   new FacebookStrategy(
     {
@@ -67,60 +65,33 @@ passport.use(
       console.log('🔄 Received Facebook OAuth callback.');
       console.log('✅ Facebook OAuth Success:', profile);
 
-      const facebookId = profile.id.toString();
+      const facebookId = profile.id.toString();  // Convert to string for TEXT storage
       const email = profile.emails?.[0]?.value || null;
       const fullName = profile.displayName || 'Unknown User';
 
       try {
-        // 1️⃣ **Check if the user already exists (by email or Facebook ID)**
-        const { data: existingUser, error: fetchError } = await supabase
+        // **Ensure the user is inserted/updated correctly**
+        const { data, error } = await supabase
           .from('profiles')
-          .select('id, email, facebook_id')
-          .or(`id.eq.${facebookId}, email.eq.${email}`)
+          .upsert(
+            [{
+              id: facebookId,  // Store Facebook ID as the primary ID
+              full_name: fullName,
+              email: email,
+              facebook_id: facebookId
+            }],
+            { onConflict: ['id'] }
+          )
+          .select()
           .single();
 
-        if (fetchError && fetchError.code !== 'PGRST116') {
-          console.error('❌ Supabase Fetch Error:', fetchError.message);
-          return done(fetchError, null);
+        if (error) {
+          console.error('❌ Supabase Upsert Error:', error.message);
+          return done(error, null);
         }
 
-        let finalUserId = existingUser ? existingUser.id : crypto.randomUUID();
-
-        if (existingUser) {
-          console.log('🔹 User already exists. Updating profile...');
-
-          // **Update fields only if needed**
-          const updateFields = {};
-          if (!existingUser.facebook_id) updateFields.facebook_id = facebookId;
-          if (existingUser.full_name !== fullName) updateFields.full_name = fullName;
-          if (existingUser.email !== email) updateFields.email = email;
-
-          if (Object.keys(updateFields).length > 0) {
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update(updateFields)
-              .eq('id', finalUserId);
-
-            if (updateError) {
-              console.error('❌ Supabase Update Error:', updateError.message);
-              return done(updateError, null);
-            }
-          }
-        } else {
-          console.log('🆕 Creating new user record...');
-
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert([{ id: finalUserId, full_name: fullName, email, facebook_id: facebookId }]);
-
-          if (insertError) {
-            console.error('❌ Supabase Insert Error:', insertError.message);
-            return done(insertError, null);
-          }
-        }
-
-        console.log('✅ User successfully stored in Supabase:', finalUserId);
-        return done(null, { accessToken, profile, userId: finalUserId });
+        console.log('✅ User successfully stored in Supabase:', facebookId);
+        return done(null, { accessToken, profile, userId: facebookId });
 
       } catch (err) {
         console.error('❌ Unexpected Error:', err.message);
