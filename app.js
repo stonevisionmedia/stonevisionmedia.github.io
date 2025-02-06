@@ -62,23 +62,63 @@ passport.use(
       profileFields: ['id', 'displayName', 'emails'],
     },
     async (accessToken, refreshToken, profile, done) => {
-      console.log('Facebook OAuth Profile:', profile);
+      console.log('🔄 Received Facebook OAuth callback.');
+      console.log('✅ Facebook OAuth Success:', profile);
 
-      // Ensure ID is stored as TEXT, not UUID
-      const userId = profile.id.toString(); 
+      const userId = profile.id.toString();
+      const email = profile.emails?.[0]?.value || null;
+      const fullName = profile.displayName || 'Unknown User';
 
       try {
-        // Insert or update user in Supabase
-        const { data, error } = await supabase
+        // 1️⃣ Check if user already exists by email
+        const { data: existingUser, error: fetchError } = await supabase
           .from('profiles')
-          .upsert([{ id: userId, full_name: profile.displayName, email: profile.emails?.[0]?.value }], { onConflict: ['id'] });
+          .select('id')
+          .eq('email', email)
+          .single();
 
-        if (error) {
-          console.error('❌ Supabase error:', error.message);
-          return done(error, null);
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          console.error('❌ Supabase Fetch Error:', fetchError.message);
+          return done(fetchError, null);
         }
 
+        let finalUserId = userId;
+
+        if (existingUser) {
+          console.log('🔹 User already exists. Updating profile...');
+
+          // If user exists, update their ID to match Facebook ID (if needed)
+          if (existingUser.id !== userId) {
+            finalUserId = existingUser.id;
+          }
+
+          // Update existing user record
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ full_name: fullName, email })
+            .eq('id', finalUserId);
+
+          if (updateError) {
+            console.error('❌ Supabase Update Error:', updateError.message);
+            return done(updateError, null);
+          }
+        } else {
+          console.log('🆕 Creating new user record...');
+
+          // 2️⃣ If user does NOT exist, insert them
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert([{ id: userId, full_name: fullName, email }]);
+
+          if (insertError) {
+            console.error('❌ Supabase Insert Error:', insertError.message);
+            return done(insertError, null);
+          }
+        }
+
+        console.log('✅ User successfully stored in Supabase:', finalUserId);
         return done(null, { accessToken, profile });
+
       } catch (err) {
         console.error('❌ Unexpected Error:', err.message);
         return done(err, null);
