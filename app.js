@@ -167,23 +167,30 @@ app.get('/auth/instagram/callback', async (req, res) => {
 /**
  * Webhook Verification (GET)
  */
-app.get('/webhook', (req, res) => {
-  console.log('Received webhook GET request:', req.query); // Log full request query
+app.post('/webhook', async (req, res) => {
+  console.log('Received Instagram Webhook Event:', JSON.stringify(req.body, null, 2));
 
-  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+  if (!req.body || typeof req.body !== 'object') {
+    console.error('❌ Invalid webhook payload');
+    return res.status(400).json({ msg: 'Invalid payload' });
+  }
 
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  try {
+    // Store event in Supabase
+    const { error } = await supabase
+      .from('audit_logs')
+      .insert([{ event_type: 'webhook_received', event_data: req.body }]);
 
-  console.log(`Webhook verification attempt: mode=${mode}, token=${token}, challenge=${challenge}`);
+    if (error) {
+      console.error('❌ Supabase Webhook Error:', error.message);
+      return res.status(500).json({ msg: 'Error storing event' });
+    }
 
-  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('✅ Webhook verified successfully.');
-    return res.status(200).send(challenge);
-  } else {
-    console.error('❌ Webhook verification failed. Check VERIFY_TOKEN value.');
-    return res.status(403).send('Forbidden');
+    console.log('✅ Webhook event logged successfully');
+    res.status(200).send('Event received');
+  } catch (error) {
+    console.error('❌ Error in webhook handler:', error.message);
+    res.status(500).json({ msg: 'Internal Server Error' });
   }
 });
 
