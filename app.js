@@ -47,7 +47,7 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ Facebook OAuth Strategy
+// Configure Passport for Facebook OAuth
 passport.use(
   new FacebookStrategy(
     {
@@ -62,7 +62,7 @@ passport.use(
       // Store user in Supabase
       const { data, error } = await supabase
         .from('profiles')
-        .upsert([{ id: profile.id, full_name: profile.displayName, email: profile.emails[0].value }]);
+        .upsert([{ id: profile.id, full_name: profile.displayName, email: profile.emails[0]?.value }]);
 
       if (error) {
         console.error('Supabase error:', error);
@@ -82,7 +82,7 @@ passport.deserializeUser((user, done) => {
   done(null, user);
 });
 
-// ✅ JWT Authentication Middleware
+// JWT Authentication Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -96,12 +96,14 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// ✅ Basic Health Check Route
+// Basic route to check if the app is running
 app.get('/', (req, res) => {
   res.send('App is running');
 });
 
-// ✅ User Registration (Email & Password)
+/**
+ * User Registration & Login
+ */
 app.post('/register', async (req, res) => {
   const { email, password, full_name } = req.body;
 
@@ -118,14 +120,18 @@ app.post('/register', async (req, res) => {
   res.json({ user });
 });
 
-// ✅ Facebook OAuth Routes
+/**
+ * Facebook OAuth Routes
+ */
 app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish'] }));
 
 app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), (req, res) => {
   res.json({ user: req.user });
 });
 
-// ✅ Instagram OAuth Routes (via Facebook)
+/**
+ * Instagram OAuth Routes (via Facebook)
+ */
 app.get('/auth/instagram', (req, res) => {
   const authUrl = `https://www.facebook.com/v17.0/dialog/oauth?${querystring.stringify({
     client_id: process.env.FB_APP_ID,
@@ -158,7 +164,9 @@ app.get('/auth/instagram/callback', async (req, res) => {
   }
 });
 
-// ✅ Webhook Verification (Facebook & Instagram)
+/**
+ * Webhook Verification (GET)
+ */
 app.get('/webhook', (req, res) => {
   const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
@@ -168,14 +176,16 @@ app.get('/webhook', (req, res) => {
 
   if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('Webhook verified successfully.');
-    res.status(200).send(challenge); // Required by Facebook
+    res.status(200).send(challenge);
   } else {
     console.error('Webhook verification failed.');
     res.status(403).send('Forbidden');
   }
 });
 
-// ✅ Webhook Event Logging (POST /webhook)
+/**
+ * Webhook Handling (POST)
+ */
 app.post('/webhook', async (req, res) => {
   const event = req.body;
   console.log('Received Instagram Webhook Event:', JSON.stringify(event, null, 2));
@@ -191,15 +201,27 @@ app.post('/webhook', async (req, res) => {
   res.status(200).send('Event received');
 });
 
-// ✅ Global Error Handler
+/**
+ * GET Requests for Testing
+ */
+app.get('/auth/facebook/callback', (req, res) => {
+  res.status(200).send('Facebook OAuth Callback GET route is working.');
+});
+
+app.get('/auth/instagram/callback', (req, res) => {
+  res.status(200).send('Instagram OAuth Callback GET route is working.');
+});
+
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ msg: 'An unexpected error occurred' });
 });
 
-// ✅ Start the Server
+// Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
 module.exports = app;
+
