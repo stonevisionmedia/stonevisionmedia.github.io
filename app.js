@@ -168,9 +168,10 @@ app.get('/auth/instagram/callback', async (req, res) => {
  * Webhook Verification (GET)
  */
 app.get('/webhook', (req, res) => {
+  console.log('Received webhook GET request:', req.query); // Log full request query
+
   const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
-  // Get query parameters from Facebook
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
@@ -179,12 +180,13 @@ app.get('/webhook', (req, res) => {
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('✅ Webhook verified successfully.');
-    res.status(200).send(challenge);
+    return res.status(200).send(challenge);
   } else {
     console.error('❌ Webhook verification failed. Check VERIFY_TOKEN value.');
-    res.status(403).send('Forbidden');
+    return res.status(403).send('Forbidden');
   }
 });
+
 
 
 /**
