@@ -202,7 +202,8 @@ app.post('/webhook', async (req, res) => {
 });
 
 /**
- * GET Requests for Testing
+ * **GET Requests for Testing**
+ * These routes allow you to visit OAuth callback URLs in a browser and confirm they work.
  */
 app.get('/auth/facebook/callback', (req, res) => {
   res.status(200).send('Facebook OAuth Callback GET route is working.');
@@ -210,6 +211,10 @@ app.get('/auth/facebook/callback', (req, res) => {
 
 app.get('/auth/instagram/callback', (req, res) => {
   res.status(200).send('Instagram OAuth Callback GET route is working.');
+});
+
+app.get('/webhook-test', (req, res) => {
+  res.status(200).send('Webhook test route is working.');
 });
 
 // Global error handler
@@ -224,4 +229,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-
