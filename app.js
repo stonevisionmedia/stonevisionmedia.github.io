@@ -70,7 +70,7 @@ passport.use(
       const fullName = profile.displayName || 'Unknown User';
 
       try {
-        // 1️⃣ Check if user already exists by email
+        // 1️⃣ Check if the user exists by email
         const { data: existingUser, error: fetchError } = await supabase
           .from('profiles')
           .select('id')
@@ -82,17 +82,15 @@ passport.use(
           return done(fetchError, null);
         }
 
-        let finalUserId = userId;
+        let finalUserId = userId; // Default to Facebook ID
 
         if (existingUser) {
           console.log('🔹 User already exists. Updating profile...');
 
-          // If user exists, update their ID to match Facebook ID (if needed)
-          if (existingUser.id !== userId) {
-            finalUserId = existingUser.id;
-          }
+          // Use existing UUID if it's already stored
+          finalUserId = existingUser.id;
 
-          // Update existing user record
+          // Update user record
           const { error: updateError } = await supabase
             .from('profiles')
             .update({ full_name: fullName, email })
@@ -105,15 +103,19 @@ passport.use(
         } else {
           console.log('🆕 Creating new user record...');
 
-          // 2️⃣ If user does NOT exist, insert them
+          // 2️⃣ Ensure a **UUID** is used for the new user
+          const newUserId = crypto.randomUUID();
+
           const { error: insertError } = await supabase
             .from('profiles')
-            .insert([{ id: userId, full_name: fullName, email }]);
+            .insert([{ id: newUserId, full_name: fullName, email }]);
 
           if (insertError) {
             console.error('❌ Supabase Insert Error:', insertError.message);
             return done(insertError, null);
           }
+
+          finalUserId = newUserId; // Assign the new UUID
         }
 
         console.log('✅ User successfully stored in Supabase:', finalUserId);
@@ -126,6 +128,7 @@ passport.use(
     }
   )
 );
+
 
 passport.serializeUser((user, done) => {
   done(null, user);
