@@ -126,9 +126,50 @@ app.post('/register', async (req, res) => {
  */
 app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish'] }));
 
-app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), (req, res) => {
-  res.json({ user: req.user });
+app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), async (req, res) => {
+  console.log('Facebook OAuth Profile:', req.user.profile);
+
+  if (!req.user || !req.user.accessToken) {
+      console.error('❌ No access token received');
+      return res.status(400).json({ msg: 'Facebook OAuth failed' });
+  }
+
+  try {
+      // Check if the user exists in Supabase
+      const { data: existingUser, error: fetchError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', req.user.profile.id)
+          .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = No rows found
+          console.error('❌ Supabase Fetch Error:', fetchError.message);
+          return res.status(500).json({ msg: 'Database error' });
+      }
+
+      // Insert or Update User Profile
+      const { error: upsertError } = await supabase
+          .from('profiles')
+          .upsert([
+              {
+                  id: req.user.profile.id,
+                  full_name: req.user.profile.displayName,
+                  email: req.user.profile.emails?.[0]?.value || null,  // Ensure email exists
+              }
+          ]);
+
+      if (upsertError) {
+          console.error('❌ Supabase Upsert Error:', upsertError.message);
+          return res.status(500).json({ msg: 'Database error' });
+      }
+
+      res.json({ msg: 'Facebook connected successfully!', user_id: req.user.profile.id });
+  } catch (error) {
+      console.error('❌ Unexpected Error:', error.message);
+      res.status(500).json({ msg: 'An unexpected error occurred' });
+  }
 });
+
 
 /**
  * Instagram OAuth Routes (via Facebook)
