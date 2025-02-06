@@ -17,6 +17,9 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Render proxies to fix rate limit issues
+app.set('trust proxy', 1);
+
 // Initialize Supabase Client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -126,49 +129,54 @@ app.post('/register', async (req, res) => {
  */
 app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish'] }));
 
+const { v5: uuidv5 } = require('uuid'); // Import UUID library
+
 app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), async (req, res) => {
-  console.log('Facebook OAuth Profile:', req.user.profile);
+    console.log('Facebook OAuth Profile:', req.user.profile);
 
-  if (!req.user || !req.user.accessToken) {
-      console.error('❌ No access token received');
-      return res.status(400).json({ msg: 'Facebook OAuth failed' });
-  }
+    if (!req.user || !req.user.accessToken) {
+        console.error('❌ No access token received');
+        return res.status(400).json({ msg: 'Facebook OAuth failed' });
+    }
 
-  try {
-      // Check if the user exists in Supabase
-      const { data: existingUser, error: fetchError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', req.user.profile.id)
-          .single();
+    try {
+        // Convert Facebook ID into a UUID
+        const userUUID = uuidv5(req.user.profile.id, uuidv5.URL);
 
-      if (fetchError && fetchError.code !== 'PGRST116') { // No rows found
-          console.error('❌ Supabase Fetch Error:', fetchError.message);
-          return res.status(500).json({ msg: 'Database fetch error' });
-      }
+        // Check if user exists
+        const { data: existingUser, error: fetchError } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', userUUID)
+            .single();
 
-      // Force Insert Data
-      const { error: upsertError } = await supabase
-          .from('profiles')
-          .insert([
-              {
-                  id: req.user.profile.id || 'no-id-provided',
-                  full_name: req.user.profile.displayName || 'Unknown Name',
-                  email: req.user.profile.emails?.[0]?.value || 'no-email@provided.com',
-              }
-          ], { onConflict: ['id'] }); // Prevents duplication errors
+        if (fetchError && fetchError.code !== 'PGRST116') { // No rows found
+            console.error('❌ Supabase Fetch Error:', fetchError.message);
+            return res.status(500).json({ msg: 'Database fetch error' });
+        }
 
-      if (upsertError) {
-          console.error('❌ Supabase Upsert Error:', upsertError.message);
-          return res.status(500).json({ msg: 'Database insert error' });
-      }
+        // Force Insert Data
+        const { error: upsertError } = await supabase
+            .from('profiles')
+            .upsert([
+                {
+                    id: userUUID, // Store UUID instead of Facebook ID
+                    full_name: req.user.profile.displayName || 'Unknown Name',
+                    email: req.user.profile.emails?.[0]?.value || 'no-email@provided.com',
+                }
+            ], { onConflict: ['id'] });
 
-      console.log('✅ User stored in Supabase:', req.user.profile.id);
-      res.json({ msg: 'Facebook connected successfully!', user_id: req.user.profile.id });
-  } catch (error) {
-      console.error('❌ Unexpected Error:', error.message);
-      res.status(500).json({ msg: 'An unexpected error occurred' });
-  }
+        if (upsertError) {
+            console.error('❌ Supabase Upsert Error:', upsertError.message);
+            return res.status(500).json({ msg: 'Database insert error' });
+        }
+
+        console.log('✅ User stored in Supabase:', userUUID);
+        res.json({ msg: 'Facebook connected successfully!', user_id: userUUID });
+    } catch (error) {
+        console.error('❌ Unexpected Error:', error.message);
+        res.status(500).json({ msg: 'An unexpected error occurred' });
+    }
 });
 
 /**
