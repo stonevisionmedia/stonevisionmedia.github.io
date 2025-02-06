@@ -72,24 +72,24 @@ passport.use(
       const fullName = profile.displayName || 'Unknown User';
 
       try {
-        // 1️⃣ **Check if the user exists in Supabase by email**
+        // 1️⃣ **Check if the user already exists (by email or Facebook ID)**
         const { data: existingUser, error: fetchError } = await supabase
           .from('profiles')
           .select('id, email, facebook_id')
           .or(`id.eq.${facebookId}, email.eq.${email}`)
           .single();
 
-        let finalUserId = existingUser ? existingUser.id : crypto.randomUUID();
-
         if (fetchError && fetchError.code !== 'PGRST116') {
           console.error('❌ Supabase Fetch Error:', fetchError.message);
           return done(fetchError, null);
         }
 
+        let finalUserId = existingUser ? existingUser.id : crypto.randomUUID();
+
         if (existingUser) {
           console.log('🔹 User already exists. Updating profile...');
 
-          // **Update only if needed**
+          // **Update fields only if needed**
           const updateFields = {};
           if (!existingUser.facebook_id) updateFields.facebook_id = facebookId;
           if (existingUser.full_name !== fullName) updateFields.full_name = fullName;
@@ -129,6 +129,7 @@ passport.use(
     }
   )
 );
+
 
 
 
