@@ -65,38 +65,24 @@ passport.use(
       console.log('🔄 Received Facebook OAuth callback.');
       console.log('✅ Facebook OAuth Success:', profile);
 
-      const facebookId = profile.id.toString();  // Convert to string for TEXT storage
-      const email = profile.emails?.[0]?.value || null;
-      const fullName = profile.displayName || 'Unknown User';
+      console.log('🔑 User Access Token:', accessToken); // 👈 LOG THIS
 
-      try {
-        // **Ensure the user is inserted/updated correctly**
-        const { data, error } = await supabase
-          .from('profiles')
-          .upsert(
-            [{
-              id: facebookId,  // Store Facebook ID as the primary ID
-              full_name: fullName,
-              email: email,
-              facebook_id: facebookId
-            }],
-            { onConflict: ['id'] }
-          )
-          .select()
-          .single();
+      // Store user in Supabase
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert([{ 
+          id: profile.id, 
+          full_name: profile.displayName, 
+          email: profile.emails?.[0]?.value,
+          facebook_access_token: accessToken // 👈 STORE TOKEN IN DATABASE
+        }]);
 
-        if (error) {
-          console.error('❌ Supabase Upsert Error:', error.message);
-          return done(error, null);
-        }
-
-        console.log('✅ User successfully stored in Supabase:', facebookId);
-        return done(null, { accessToken, profile, userId: facebookId });
-
-      } catch (err) {
-        console.error('❌ Unexpected Error:', err.message);
-        return done(err, null);
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        return done(error, null);
       }
+
+      return done(null, { accessToken, profile });
     }
   )
 );
