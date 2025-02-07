@@ -139,9 +139,17 @@ app.post('/register', async (req, res) => {
 /**
  * Facebook OAuth Routes
  */
-app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email', 'pages_show_list', 'instagram_basic', 'instagram_content_publish'] }));
-
-const { v4: uuidv4 } = require('uuid'); // Ensure this is at the top
+app.get('/auth/facebook', passport.authenticate('facebook', { 
+  scope: [
+      'email',
+      'pages_show_list',
+      'pages_manage_posts',  // ✅ NEW
+      'publish_pages',        // ✅ NEW
+      'instagram_basic',
+      'instagram_content_publish',
+      'pages_read_engagement'
+  ]
+}));
 
 app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), async (req, res) => {
     console.log('🔄 Received Facebook OAuth callback.');
