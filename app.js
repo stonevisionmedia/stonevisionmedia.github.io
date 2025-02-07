@@ -82,6 +82,7 @@ passport.use(
         const { data: upsertData, error: upsertError } = await supabase
           .from('profiles')
           .upsert({
+            id: uuidv4(),
             // Use email as a unique field if that's how you handle identity
             email,
             full_name: fullName,
