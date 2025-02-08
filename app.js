@@ -1,6 +1,6 @@
 /************************************************************
- * app.js — Consolidated Code w/ Facebook, Instagram, 
- *          + placeholders for TikTok & Twitter
+ * app.js — Consolidated Code w/ Cron for Instagram Refresh,
+ *          Facebook, Instagram, Twitter & TikTok placeholders
  ************************************************************/
 
 require('dotenv').config();
@@ -17,7 +17,10 @@ const session = require('express-session');
 const FacebookStrategy = require('passport-facebook').Strategy;
 const { createClient } = require('@supabase/supabase-js');
 const bodyParser = require('body-parser');
-const { v4: uuidv4 } = require('uuid'); // For generating UUIDs
+const { v4: uuidv4 } = require('uuid');
+
+// Added node-cron
+const cron = require('node-cron');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -57,6 +60,61 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 /************************************************************
+ * CRON JOB (using node-cron) — Refresh Instagram Tokens
+ * Runs daily at midnight UTC
+ ************************************************************/
+cron.schedule('0 0 * * *', async () => {
+  console.log('Running daily cron job to refresh Instagram tokens');
+
+  try {
+    // 1) Fetch all IG connections
+    const { data: igConnections, error: igError } = await supabase
+      .from('social_connections')
+      .select('*')
+      .eq('platform', 'instagram');
+
+    if (igError) {
+      console.error('Error fetching IG connections in cron:', igError);
+      return;
+    }
+
+    // 2) For each IG connection, call the refresh endpoint
+    for (const conn of igConnections) {
+      const refreshUrl = 'https://graph.instagram.com/refresh_access_token';
+      const params = {
+        grant_type: 'ig_refresh_token',
+        access_token: conn.page_access_token,
+      };
+
+      try {
+        const resp = await axios.get(refreshUrl, { params });
+        const newToken = resp.data.access_token;
+
+        // 3) Update DB with the new token
+        await supabase.from('social_connections').upsert({
+          id: conn.id,
+          user_id: conn.user_id,
+          platform: 'instagram',
+          page_id: conn.page_id,
+          page_access_token: newToken,
+        });
+
+        console.log(`Refreshed IG token for user_id=${conn.user_id}`);
+      } catch (e) {
+        console.error(
+          `Failed to refresh IG token for user_id=${conn.user_id}`,
+          e.response?.data || e
+        );
+      }
+    }
+
+    console.log('Instagram token refresh cron job complete');
+  } catch (error) {
+    console.error('Cron job error:', error);
+  }
+});
+
+/************************************************************
  * PASSPORT FACEBOOK STRATEGY
  ************************************************************/
 passport.use(
@@ -79,7 +137,6 @@ passport.use(
           'no-email@provided.com';
 
         // 1) Upsert user into "profiles"
-        // Provide a UUID for the 'id' if your table doesn't auto-generate
         const { data: upsertData, error: upsertError } = await supabase
           .from('profiles')
           .upsert({
@@ -375,20 +432,16 @@ app.get('/auth/instagram/callback', async (req, res) => {
     const expiresIn = exchangeResponse.data.expires_in; // ~60 days
     console.log('🔑 IG Long-Lived Token:', longLivedToken, 'Expires in:', expiresIn);
 
-    // 3) For demonstration, we assume you have a user ID from context
-    //    This might require a separate login flow or a user token
-    //    For now, let's just pick a random user or store it somewhere
-    //    In real usage, you might need the user to be logged in with your JWT
-    const tempUserId = uuidv4(); 
-    // Ideally, you'd do: const userId = req.userId; 
-    // but that means you'd call authenticateToken, etc.
+    // In a real flow, you'd have a known user ID from a JWT
+    // For demonstration only:
+    const tempUserId = uuidv4();
 
-    // 4) Store the IG token in social_connections
+    // 3) Store the IG token in social_connections
     const { data: igConnData, error: igConnError } = await supabase
       .from('social_connections')
       .upsert({
         id: uuidv4(),
-        user_id: tempUserId,    // or the real userId from your auth
+        user_id: tempUserId,
         platform: 'instagram',
         page_id: null,          // If you have an IG Business Account ID, store it here
         page_access_token: longLivedToken,
@@ -415,10 +468,6 @@ app.get('/auth/instagram/callback', async (req, res) => {
 
 /************************************************************
  * POST TO INSTAGRAM (Placeholder)
- * For IG Business/Creator accounts, you typically:
- *  - Have an IG Business ID (via /facebook/pages + /{page_id}?fields=instagram_business_account)
- *  - POST { image_url, caption } to /{ig_business_id}/media
- *  - Then POST { creation_id } to /{ig_business_id}/media_publish
  ************************************************************/
 app.post('/post/instagram', authenticateToken, async (req, res) => {
   try {
@@ -426,13 +475,12 @@ app.post('/post/instagram', authenticateToken, async (req, res) => {
     const userId = req.userId.toString();
 
     // 1) Fetch the IG token from social_connections
-    //    If you're storing multiple IG business accounts, you'd pick the correct one.
     const { data: connData, error: connError } = await supabase
       .from('social_connections')
       .select('page_id, page_access_token')
       .eq('user_id', userId)
       .eq('platform', 'instagram')
-      .eq('page_id', ig_business_id) // Or if you store the IG business account ID in page_id
+      .eq('page_id', ig_business_id) // or the IG business ID
       .single();
 
     if (connError || !connData) {
@@ -488,10 +536,9 @@ app.post('/post/instagram', authenticateToken, async (req, res) => {
 
 /************************************************************
  * TOKEN REFRESH DEMO ROUTES
- * In production, you'd typically run a daily cron job or scheduled task
+ * (We replaced this with node-cron above, but you can keep 
+ *  this route if you want a manual refresh endpoint.)
  ************************************************************/
-
-// (A) Instagram token refresh
 app.get('/refresh/instagram', async (req, res) => {
   try {
     // 1) Find all IG connections
@@ -500,19 +547,16 @@ app.get('/refresh/instagram', async (req, res) => {
       .select('*')
       .eq('platform', 'instagram');
 
-    // 2) Refresh each one
     for (const conn of igConnections) {
       const refreshUrl = 'https://graph.instagram.com/refresh_access_token';
       const params = {
         grant_type: 'ig_refresh_token',
         access_token: conn.page_access_token,
       };
-
       try {
         const resp = await axios.get(refreshUrl, { params });
         const newToken = resp.data.access_token;
 
-        // 3) Update DB
         await supabase.from('social_connections').upsert({
           id: conn.id,
           user_id: conn.user_id,
@@ -532,53 +576,27 @@ app.get('/refresh/instagram', async (req, res) => {
   }
 });
 
-// (B) Facebook token refresh (placeholder)
-// If you need to refresh user tokens or page tokens, you'd do a similar approach
-// Or you can re-fetch them from /me/accounts after refreshing the user token.
-
 /************************************************************
  * TIKTOK & TWITTER PLACEHOLDERS
- * "Show" how we'd structure it, but no real implementation
  ************************************************************/
-
-/**
- * TikTok typically uses its own OAuth flow:
- *  - User visits your endpoint -> redirect to TikTok's OAuth
- *  - Then callback -> you get code -> exchange for access_token
- *  - Store in social_connections with platform='tiktok'
- */
 app.get('/auth/tiktok', (req, res) => {
-  // 1) Redirect to TikTok OAuth
-  // ...
   res.send('TikTok OAuth not implemented');
 });
 
 app.get('/auth/tiktok/callback', async (req, res) => {
-  // 2) Exchange code for token
-  // 3) Store in social_connections
   res.send('TikTok callback not implemented');
 });
 
-/**
- * Twitter can use OAuth 1.0a or OAuth 2.0.
- * For v2, you'd do a similar pattern: 
- *   GET /auth/twitter => redirect => callback => store token
- */
+app.post('/post/tiktok', authenticateToken, async (req, res) => {
+  res.json({ msg: 'Placeholder for TikTok posting' });
+});
+
 app.get('/auth/twitter', (req, res) => {
   res.send('Twitter OAuth not implemented');
 });
 
 app.get('/auth/twitter/callback', async (req, res) => {
   res.send('Twitter callback not implemented');
-});
-
-/**
- * Then you'd have endpoints like /post/tiktok, /post/twitter 
- * that fetch the relevant token from social_connections, 
- * and call the appropriate API to create a post/tweet.
- */
-app.post('/post/tiktok', authenticateToken, async (req, res) => {
-  res.json({ msg: 'Placeholder for TikTok posting' });
 });
 
 app.post('/post/twitter', authenticateToken, async (req, res) => {
