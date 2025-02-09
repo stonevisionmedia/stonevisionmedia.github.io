@@ -591,17 +591,183 @@ app.post('/post/tiktok', authenticateToken, async (req, res) => {
   res.json({ msg: 'Placeholder for TikTok posting' });
 });
 
+/************************************************************
+ * TWITTER OAUTH 2.0
+ ************************************************************/
+
+// Step A: Start the OAuth flow
 app.get('/auth/twitter', (req, res) => {
-  res.send('Twitter OAuth not implemented');
+  // Scopes can include: tweet.write, users.read, offline.access (for refresh tokens)
+  const scopes = ['tweet.write', 'users.read', 'offline.access'];
+
+  // We’ll do a simple code challenge “plain” approach for demonstration
+  const state = 'randomStateString'; // In production, generate a random token or store in session
+
+  // Build the authorization URL
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.TWITTER_CLIENT_ID,       // e.g. "xxxxxxxxxxxxxx"
+    redirect_uri: process.env.TWITTER_REDIRECT_URI, // e.g. "https://mediamoney.onrender.com/auth/twitter/callback"
+    scope: scopes.join(' '),
+    state,
+    code_challenge: 'dummy_challenge',
+    code_challenge_method: 'plain',
+  });
+
+  const authUrl = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
+  return res.redirect(authUrl);
 });
 
+// Step B: Handle the callback from Twitter
 app.get('/auth/twitter/callback', async (req, res) => {
-  res.send('Twitter callback not implemented');
+  try {
+    const { code, state } = req.query;
+
+    if (!code) {
+      return res.status(400).json({ msg: 'Authorization code is missing from Twitter callback' });
+    }
+
+    // In production, verify 'state' if you set a randomStateString above
+
+    // 1) Exchange code for access token
+    const tokenResponse = await axios.post(
+      'https://api.twitter.com/2/oauth2/token',
+      new URLSearchParams({
+        client_id: process.env.TWITTER_CLIENT_ID,
+        client_secret: process.env.TWITTER_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: process.env.TWITTER_REDIRECT_URI,
+        code_verifier: 'dummy_challenge', // Must match code_challenge
+      }),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }
+    );
+
+    /*
+      tokenResponse.data typically looks like:
+      {
+        "token_type": "bearer",
+        "expires_in": 7200,
+        "access_token": "...",
+        "scope": "tweet.write users.read offline.access",
+        "refresh_token": "..."
+      }
+    */
+    const { access_token, refresh_token, token_type, expires_in, scope } = tokenResponse.data;
+
+    // 2) (Optional) Fetch the user's Twitter ID from the /2/users/me endpoint
+    let twitterUserId;
+    try {
+      const userResp = await axios.get('https://api.twitter.com/2/users/me', {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      });
+      twitterUserId = userResp.data?.data?.id; // e.g. "1234567890"
+    } catch (e) {
+      console.error('Failed to fetch Twitter user ID:', e.response?.data || e);
+      // Not strictly required, but nice to have
+    }
+
+    // 3) Upsert in 'profiles' or 'social_connections'
+    //    If you have a logged-in user with a JWT, you'd do "req.userId"
+    //    For demo, we'll generate a random userId (like the IG code example)
+    const userId = uuidv4(); // Replace with your real user logic if you have a login system
+
+    // Create a record in 'social_connections' with platform='twitter'
+    // If you want to store refresh_token, you might need an extra column in social_connections
+    // or you can store it in a JSON field, etc.
+    const newConnId = uuidv4();
+    const insertPayload = {
+      id: newConnId,
+      user_id: userId,
+      platform: 'twitter',
+      page_id: twitterUserId || null, // or store the user's Twitter ID in page_id
+      page_access_token: access_token,
+      // If you have a refresh_token column, store refresh_token here
+    };
+
+    const { data: upsertData, error: upsertError } = await supabase
+      .from('social_connections')
+      .upsert(insertPayload)
+      .select()
+      .single();
+
+    if (upsertError) {
+      console.error('❌ Upsert error in "social_connections" (Twitter token):', upsertError);
+      return res.status(500).json({ msg: 'Error storing Twitter token' });
+    }
+
+    // 4) Return some success info
+    return res.json({
+      msg: 'Twitter OAuth successful',
+      user_id: userId,
+      twitter_user_id: twitterUserId,
+      access_token,
+      refresh_token,
+      expires_in,
+      scope,
+    });
+  } catch (error) {
+    console.error('Twitter OAuth error:', error.response?.data || error.message);
+    res.status(500).json({ msg: 'Twitter OAuth failed' });
+  }
 });
 
+// Step C: Post a tweet
 app.post('/post/twitter', authenticateToken, async (req, res) => {
-  res.json({ msg: 'Placeholder for Twitter posting' });
+  try {
+    const { message } = req.body;
+    const userId = req.userId; // from authenticateToken
+
+    // 1) Fetch the user's stored Twitter token
+    const { data: connData, error: connError } = await supabase
+      .from('social_connections')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('platform', 'twitter')
+      .single();
+
+    if (connError || !connData) {
+      return res.status(400).json({ msg: 'No Twitter connection found for this user' });
+    }
+
+    const twitterAccessToken = connData.page_access_token; // The "bearer" token
+    if (!twitterAccessToken) {
+      return res.status(400).json({ msg: 'Twitter access token missing' });
+    }
+
+    // 2) Post the tweet using Twitter API v2
+    const response = await axios.post(
+      'https://api.twitter.com/2/tweets',
+      { text: message },
+      {
+        headers: {
+          Authorization: `Bearer ${twitterAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    // 3) Store the tweet in 'posts' table if you wish
+    await supabase.from('posts').insert({
+      id: uuidv4(),
+      user_id: userId,
+      platform: 'twitter',
+      content: message,
+      status: 'published',
+      published_at: new Date(),
+    });
+
+    return res.json({ msg: 'Tweet posted!', twitterData: response.data });
+  } catch (error) {
+    console.error('Twitter Post Error:', error.response?.data || error.message);
+    res.status(500).json({ msg: 'Failed to post tweet' });
+  }
 });
+
 
 /************************************************************
  * WEBHOOK VERIFICATION (GET)
