@@ -462,6 +462,7 @@ app.get('/auth/instagram/callback', async (req, res) => {
     });
   } catch (error) {
     console.error('Instagram OAuth error:', error.response?.data || error.message);
+    console.error('Instagram OAuth error:', JSON.stringify(error.response?.data, null, 2));
     res.status(500).json({ msg: 'Instagram OAuth flow failed' });
   }
 });
