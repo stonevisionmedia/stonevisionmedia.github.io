@@ -598,8 +598,8 @@ app.post('/post/tiktok', authenticateToken, async (req, res) => {
 
 // Step A: Start the OAuth flow
 app.get('/auth/twitter', (req, res) => {
-  // Scopes can include: tweet.write, users.read, offline.access (for refresh tokens)
-  const scopes = ['tweet.write', 'users.read', 'offline.access'];
+  // Add "tweet.read" so we can call /2/users/me, among other endpoints
+  const scopes = ['tweet.read', 'tweet.write', 'users.read', 'offline.access'];
 
   // We’ll do a simple code challenge “plain” approach for demonstration
   const state = 'randomStateString'; // In production, generate a random token or store in session
@@ -618,6 +618,7 @@ app.get('/auth/twitter', (req, res) => {
   const authUrl = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
   return res.redirect(authUrl);
 });
+
 
 // Step B: Handle the callback from Twitter
 app.get('/auth/twitter/callback', async (req, res) => {
