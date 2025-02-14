@@ -728,53 +728,44 @@ app.get('/auth/twitter/callback', async (req, res) => {
 app.post('/post/twitter', authenticateToken, async (req, res) => {
   try {
     const { message } = req.body;
-    const userId = req.userId; // from authenticateToken
+    const userId = req.userId.toString();
 
-    // 1) Fetch the user's stored Twitter token
-    const { data: connData, error: connError } = await supabase
+    // Fetch user's stored Twitter access token from Supabase
+    const { data, error } = await supabase
       .from('social_connections')
-      .select('*')
+      .select('access_token')
       .eq('user_id', userId)
       .eq('platform', 'twitter')
       .single();
 
-    if (connError || !connData) {
-      return res.status(400).json({ msg: 'No Twitter connection found for this user' });
+    if (error || !data) {
+      console.error('❌ Twitter Post Error: No access token found.');
+      return res.status(400).json({ msg: 'Twitter account not connected' });
     }
 
-    const twitterAccessToken = connData.page_access_token; // The "bearer" token
-    if (!twitterAccessToken) {
-      return res.status(400).json({ msg: 'Twitter access token missing' });
-    }
+    const twitterAccessToken = data.access_token;
 
-    // 2) Post the tweet using Twitter API v2
+    // Make request to Twitter API to post tweet
     const response = await axios.post(
       'https://api.twitter.com/2/tweets',
       { text: message },
       {
         headers: {
-          Authorization: `Bearer ${twitterAccessToken}`,
+          'Authorization': `Bearer ${twitterAccessToken}`,
           'Content-Type': 'application/json',
         },
       }
     );
 
-    // 3) Store the tweet in 'posts' table if you wish
-    await supabase.from('posts').insert({
-      id: uuidv4(),
-      user_id: userId,
-      platform: 'twitter',
-      content: message,
-      status: 'published',
-      published_at: new Date(),
-    });
+    console.log('✅ Tweet posted:', response.data);
+    return res.json({ msg: 'Tweet posted successfully!', tweet_data: response.data });
 
-    return res.json({ msg: 'Tweet posted!', twitterData: response.data });
   } catch (error) {
-    console.error('Twitter Post Error:', error.response?.data || error.message);
-    res.status(500).json({ msg: 'Failed to post tweet' });
+    console.error('❌ Twitter Post Error:', error.response?.data || error.message);
+    return res.status(500).json({ msg: 'Error posting tweet' });
   }
 });
+
 
 
 /************************************************************
