@@ -730,10 +730,8 @@ app.post('/post/twitter', authenticateToken, async (req, res) => {
     const { message } = req.body;
     const userId = req.userId.toString();
 
-    // 🔍 Log user ID for debugging
     console.log(`🔍 Fetching Twitter access token for User ID: ${userId}`);
 
-    // Fetch user's stored Twitter access token from Supabase
     const { data, error } = await supabase
       .from('social_connections')
       .select('access_token')
@@ -742,16 +740,14 @@ app.post('/post/twitter', authenticateToken, async (req, res) => {
       .single();
 
     if (error || !data) {
-      console.error('❌ Twitter Post Error: No access token found.');
+      console.error('❌ No Twitter access token found.');
       return res.status(400).json({ msg: 'Twitter account not connected' });
     }
 
     const twitterAccessToken = data.access_token;
 
-    // 🔍 Log access token to confirm it exists
     console.log(`✅ Retrieved Twitter Access Token: ${twitterAccessToken}`);
 
-    // Make request to Twitter API to post tweet
     const response = await axios.post(
       'https://api.twitter.com/2/tweets',
       { text: message },
@@ -767,8 +763,8 @@ app.post('/post/twitter', authenticateToken, async (req, res) => {
     return res.json({ msg: 'Tweet posted successfully!', tweet_data: response.data });
 
   } catch (error) {
-    console.error('❌ Twitter Post Error:', error.response?.data || error.message);
-    return res.status(500).json({ msg: 'Error posting tweet' });
+    console.error('❌ Twitter Post Error:', JSON.stringify(error.response?.data, null, 2));
+    return res.status(500).json({ msg: 'Error posting tweet', error: error.response?.data || error.message });
   }
 });
 
