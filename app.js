@@ -630,21 +630,27 @@ app.get('/auth/twitter/callback', async (req, res) => {
 
     // In production, verify 'state' if you set a randomStateString above
 
-    // 1) Exchange code for access token
+    const authString = Buffer.from(
+      `${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`
+    ).toString('base64');
+    
     const tokenResponse = await axios.post(
       'https://api.twitter.com/2/oauth2/token',
       new URLSearchParams({
-        client_id: process.env.TWITTER_CLIENT_ID,
-        client_secret: process.env.TWITTER_CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
         redirect_uri: process.env.TWITTER_REDIRECT_URI,
-        code_verifier: 'dummy_challenge', // Must match code_challenge
+        code_verifier: 'dummy_challenge', 
       }),
       {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // The crucial part:
+          Authorization: `Basic ${authString}`,
+        },
       }
     );
+    
 
     /*
       tokenResponse.data typically looks like:
